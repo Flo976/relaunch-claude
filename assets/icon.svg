@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#1F1E1D"/>
+  <!-- circular "relaunch" arrow -->
+  <path d="M196 128a68 68 0 1 1-20-48" fill="none" stroke="#D97757" stroke-width="20" stroke-linecap="round"/>
+  <path d="M196 100L188 58L154 92Z" fill="#D97757" stroke="#D97757" stroke-width="6" stroke-linejoin="round"/>
+  <!-- terminal prompt -->
+  <path d="M96 108l26 20-26 20" fill="none" stroke="#F5F0E8" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M130 156h32" stroke="#F5F0E8" stroke-width="14" stroke-linecap="round"/>
+</svg>
