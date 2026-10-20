@@ -31,7 +31,13 @@ for event in ("SessionStart", "SessionEnd"):
 path.write_text(json.dumps(cfg, indent=2) + "\n")
 PY
 
-# 2. Desktop launcher: application menu + desktop icon.
+# 2. `reclaude` terminal command.
+BIN="$HOME/.local/bin"
+mkdir -p "$BIN"
+printf '#!/bin/sh\nexec python3 "%s/relaunch_claude.py" "$@"\n' "$DEST" > "$BIN/reclaude"
+chmod +x "$BIN/reclaude"
+
+# 3. Desktop launcher: application menu + desktop icon.
 DESKTOP_FILE="[Desktop Entry]
 Type=Application
 Name=Relaunch Claude
@@ -63,4 +69,5 @@ fi
 
 echo "Relaunch Claude installed."
 echo "  - Sessions started from now on are tracked (already open ones: restart them once)."
-echo "  - After a reboot, click the \"Relaunch Claude\" icon."
+echo "  - After a reboot, click the \"Relaunch Claude\" icon, or run: reclaude"
+case ":$PATH:" in *":$BIN:"*) ;; *) echo "  - $BIN is not in your PATH yet: open a new terminal (or log out/in) before using reclaude." ;; esac

@@ -24,5 +24,10 @@ if (Test-Path $Settings) {
 foreach ($dir in [Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'), [Environment]::GetFolderPath('Startup')) {
     Remove-Item (Join-Path $dir 'Relaunch Claude.lnk') -ErrorAction SilentlyContinue
 }
+$Bin = Join-Path $Dest 'bin'
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if ($userPath) {
+    [Environment]::SetEnvironmentVariable('Path', (($userPath -split ';') | Where-Object { $_ -and $_ -ne $Bin }) -join ';', 'User')
+}
 Remove-Item $Dest, (Join-Path $ClaudeDir 'relaunch-claude') -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host 'Relaunch Claude uninstalled.'

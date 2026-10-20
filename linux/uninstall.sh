@@ -27,6 +27,7 @@ PY
 fi
 
 DESKTOP_DIR="$(xdg-user-dir DESKTOP 2>/dev/null || echo "$HOME/Desktop")"
+rm -f "$HOME/.local/bin/reclaude"
 rm -f "${XDG_DATA_HOME:-$HOME/.local/share}/applications/relaunch-claude.desktop" \
       "$DESKTOP_DIR/relaunch-claude.desktop" \
       "$HOME/.config/autostart/relaunch-claude.desktop"

@@ -5,8 +5,9 @@
     relaunch-claude.ps1           called by the desktop shortcut
     relaunch-claude.ps1 -List     show the registry
     relaunch-claude.ps1 -DryRun   print what would be launched
+    reclaude [list|--dry-run]     same, from any terminal (tabs open in the current window)
 #>
-param([switch]$Hook, [switch]$List, [switch]$DryRun)
+param([switch]$Hook, [switch]$List, [switch]$DryRun, [switch]$Console)
 
 $ClaudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-Path $env:USERPROFILE ".claude" }
 $Registry  = Join-Path $ClaudeDir "relaunch-claude\sessions"
@@ -93,7 +94,7 @@ function Test-StillRunning($e) {
 
 function Show-Message([string]$msg) {
     Write-Host $msg
-    if ($DryRun) { return }
+    if ($DryRun -or $Console) { return }
     try {
         Add-Type -AssemblyName System.Windows.Forms
         $n = New-Object System.Windows.Forms.NotifyIcon
@@ -112,7 +113,7 @@ function Invoke-Relaunch {
     $wt = Get-Command wt.exe -ErrorAction SilentlyContinue
     $shell = if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $done = 0; $skipped = @()
+    $done = 0; $skipped = @(); $todo = @()
 
     foreach ($e in Get-Entries) {
         if ($now - [int64]$e.updated_at -gt $StaleDays * 86400) { Remove-Item $e._file; continue }
@@ -120,10 +121,22 @@ function Invoke-Relaunch {
         if (-not $e.cwd -or -not (Test-Path $e.cwd -PathType Container)) {
             $skipped += $(if ($e.cwd) { $e.cwd } else { $e.session_id }); Remove-Item $e._file; continue
         }
+        $todo += $e
+    }
+    if ($todo) { Write-Host "$([char]0x21BB) $($todo.Count) interrupted session(s) found" }
+
+    foreach ($e in $todo) {
         $claude = if ($e.claude_bin -and (Test-Path $e.claude_bin)) { $e.claude_bin } else { 'claude' }
         $claudeArgs = @()
-        if ($e.transcript_path -and (Test-Path $e.transcript_path)) { $claudeArgs += '--resume', $e.session_id }
-        $claudeArgs += @($e.args) + $extra | Where-Object { $_ }
+        $shown = @('claude')
+        if ($e.transcript_path -and (Test-Path $e.transcript_path)) {
+            $claudeArgs += '--resume', $e.session_id
+            $shown += '--resume', ($e.session_id.Substring(0, 4) + [char]0x2026)
+        }
+        $flags = @(@($e.args) + $extra | Where-Object { $_ })
+        $claudeArgs += $flags
+        $cwdShown = $e.cwd -replace ('^' + [regex]::Escape($env:USERPROFILE)), '~'
+        $line = '{0,-24} {1}' -f $cwdShown, (($shown + $flags) -join ' ')
         $quoted = ($claudeArgs | ForEach-Object { if ($_ -match '\s') { "'$_'" } else { $_ } }) -join ' '
         # A tab opened from another Claude session inherits CLAUDE_CODE_CHILD_SESSION,
         # which silently disables transcript writing.
@@ -131,15 +144,17 @@ function Invoke-Relaunch {
                  "`$env:CLAUDE_CODE_FORCE_SESSION_PERSISTENCE='1'; & '$claude' $quoted"
 
         if ($wt) {
-            # -w names one window so every session lands in it as a tab.
+            # -w names one window so every session lands in it as a tab (0 = the current one).
             # wt treats ';' as its own separator, hence the escaping.
-            $wtArgs = "-w relaunch-claude new-tab -d `"$($e.cwd)`" $shell -NoExit -Command `"$($inner -replace ';', '\;')`""
-            if ($DryRun) { Write-Host "wt.exe $wtArgs"; $done++; continue }
+            $window = if ($Console) { '0' } else { 'relaunch-claude' }
+            $wtArgs = "-w $window new-tab -d `"$($e.cwd)`" $shell -NoExit -Command `"$($inner -replace ';', '\;')`""
+            if ($DryRun) { Write-Host "  $([char]0x2192) $line`n      wt.exe $wtArgs"; $done++; continue }
             Start-Process wt.exe -ArgumentList $wtArgs
         } else {
-            if ($DryRun) { Write-Host "$shell -NoExit -Command $inner  (in $($e.cwd))"; $done++; continue }
+            if ($DryRun) { Write-Host "  $([char]0x2192) $line`n      $shell -NoExit -Command $inner"; $done++; continue }
             Start-Process $shell -WorkingDirectory $e.cwd -ArgumentList '-NoExit', '-Command', $inner
         }
+        Write-Host "  $([char]0x2713) $line"
         Remove-Item $e._file   # the resumed session registers itself again on start
         $done++
         Start-Sleep -Milliseconds 700

@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="960" height="480">
+  <defs>
+    <style>
+      .t { font-family: "JetBrains Mono", "SF Mono", Menlo, Consolas, "DejaVu Sans Mono", monospace; font-size: 19px; white-space: pre; }
+      .dim { fill: #8A8178; } .fg { fill: #F5F0E8; } .ok { fill: #8BD49C; } .acc { fill: #D97757; }
+      /* 10 s loop: type the command, print the result, tabs pop in */
+      .type   { animation: type 10s steps(8) infinite; }
+      @keyframes type { 0%, 6% { width: 0; } 18%, 100% { width: 104px; } }
+      .l1 { animation: l1 10s infinite; } @keyframes l1 { 0%, 22% { opacity: 0; } 24%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .l2 { animation: l2 10s infinite; } @keyframes l2 { 0%, 30% { opacity: 0; } 32%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .l3 { animation: l3 10s infinite; } @keyframes l3 { 0%, 36% { opacity: 0; } 38%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .l4 { animation: l4 10s infinite; } @keyframes l4 { 0%, 42% { opacity: 0; } 44%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .l5 { animation: l5 10s infinite; } @keyframes l5 { 0%, 48% { opacity: 0; } 50%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .l6 { animation: l6 10s infinite; } @keyframes l6 { 0%, 56% { opacity: 0; } 58%, 96% { opacity: 1; } 100% { opacity: 0; } }
+      .cur { animation: blink 1s steps(1) infinite; } @keyframes blink { 50% { opacity: 0; } }
+      .tab { opacity: 0; }
+      .k1 { animation: l2 10s infinite; } .k2 { animation: l3 10s infinite; }
+      .k3 { animation: l4 10s infinite; } .k4 { animation: l5 10s infinite; }
+    </style>
+    <clipPath id="typeclip"><rect class="type" x="0" y="0" width="104" height="40"/></clipPath>
+  </defs>
+
+  <!-- window -->
+  <rect width="960" height="480" rx="18" fill="#141312"/>
+  <rect width="960" height="96" rx="18" fill="#1F1E1D"/>
+  <rect y="78" width="960" height="18" fill="#1F1E1D"/>
+  <circle cx="30" cy="28" r="7" fill="#FF5F57"/><circle cx="54" cy="28" r="7" fill="#FEBC2E"/><circle cx="78" cy="28" r="7" fill="#28C840"/>
+  <text x="480" y="34" text-anchor="middle" class="t dim" style="font-size:15px">~ — Terminal</text>
+
+  <!-- tabs -->
+  <g transform="translate(16 54)">
+    <rect width="150" height="42" rx="9" fill="#141312"/>
+    <text x="16" y="27" class="t fg" style="font-size:15px">~</text>
+    <g class="tab k1"><rect x="158" width="170" height="42" rx="9" fill="#2A2725"/><text x="174" y="27" class="t" style="font-size:15px"><tspan class="acc">✳</tspan><tspan class="fg"> api</tspan></text></g>
+    <g class="tab k2"><rect x="336" width="170" height="42" rx="9" fill="#2A2725"/><text x="352" y="27" class="t" style="font-size:15px"><tspan class="acc">✳</tspan><tspan class="fg"> front</tspan></text></g>
+    <g class="tab k3"><rect x="514" width="170" height="42" rx="9" fill="#2A2725"/><text x="530" y="27" class="t" style="font-size:15px"><tspan class="acc">✳</tspan><tspan class="fg"> scan</tspan></text></g>
+    <g class="tab k4"><rect x="692" width="170" height="42" rx="9" fill="#2A2725"/><text x="708" y="27" class="t" style="font-size:15px"><tspan class="acc">✳</tspan><tspan class="fg"> infra</tspan></text></g>
+  </g>
+
+  <!-- prompt -->
+  <g transform="translate(36 150)">
+    <text class="t"><tspan class="ok">you@box</tspan><tspan class="dim">:</tspan><tspan fill="#7AA2F7">~</tspan><tspan class="dim">$ </tspan></text>
+    <g transform="translate(124 -22)" clip-path="url(#typeclip)"><text y="22" class="t fg" font-weight="700">reclaude</text></g>
+  </g>
+
+  <g transform="translate(36 200)" class="t" xml:space="preserve">
+    <text class="l1 dim">↻ 4 interrupted sessions found</text>
+    <text y="40" class="l2"><tspan x="20" class="ok">✓</tspan><tspan x="48" class="fg">~/code/api</tspan><tspan x="230" class="dim">claude --resume 3f9c… --dangerously-skip-permissions</tspan></text>
+    <text y="72" class="l3"><tspan x="20" class="ok">✓</tspan><tspan x="48" class="fg">~/code/front</tspan><tspan x="230" class="dim">claude --resume a71e…</tspan></text>
+    <text y="104" class="l4"><tspan x="20" class="ok">✓</tspan><tspan x="48" class="fg">~/code/scan</tspan><tspan x="230" class="dim">claude --resume 0bd2… --model opus</tspan></text>
+    <text y="136" class="l5"><tspan x="20" class="ok">✓</tspan><tspan x="48" class="fg">~/ops/infra</tspan><tspan x="230" class="dim">claude --resume 9e44…</tspan></text>
+    <text y="186" class="l6"><tspan class="acc">4 session(s) relaunched.</tspan></text>
+    <rect class="cur" x="0" y="210" width="11" height="22" fill="#D97757"/>
+  </g>
+</svg>

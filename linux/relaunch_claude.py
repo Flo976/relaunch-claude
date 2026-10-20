@@ -4,8 +4,9 @@
 
 Two roles in one file:
   relaunch_claude.py hook       called by Claude Code (SessionStart / SessionEnd)
-  relaunch_claude.py [relaunch] called by the desktop icon
-  relaunch_claude.py list       show the registry
+  relaunch_claude.py [relaunch] called by the desktop icon, or `reclaude` in a terminal
+  relaunch_claude.py list       show the registry          (reclaude list)
+  relaunch_claude.py --dry-run  print what would be opened (reclaude --dry-run)
 """
 import json
 import os
@@ -188,6 +189,15 @@ def notify(msg):
                        check=False)
 
 
+def describe(e, extra):
+    """One readable line per session: folder + what will run in it."""
+    home = str(Path.home())
+    cwd = e["cwd"].replace(home, "~", 1) if e["cwd"].startswith(home) else e["cwd"]
+    transcript = e.get("transcript_path")
+    resume = ["--resume", e["session_id"][:4] + "\u2026"] if transcript and Path(transcript).exists() else []
+    return f"{cwd:<24} " + " ".join(["claude"] + resume + e.get("args", []) + extra)
+
+
 def relaunch(dry_run=False):
     cfg = {}
     if CONFIG.exists():
@@ -201,30 +211,37 @@ def relaunch(dry_run=False):
         notify("No supported terminal found (set \"terminal\" in " + str(CONFIG) + ").")
         return 1
 
-    done, skipped = 0, []
+    todo, skipped = [], []
     for e in load_entries():
         f = e.pop("_file")
         if time.time() - e.get("updated_at", 0) > STALE_DAYS * 86400:
             f.unlink(missing_ok=True)
+        elif still_running(e):
             continue
-        if still_running(e):
-            continue
-        cwd = e.get("cwd")
-        if not cwd or not Path(cwd).is_dir():
-            skipped.append(cwd or e["session_id"])
+        elif not e.get("cwd") or not Path(e["cwd"]).is_dir():
+            skipped.append(e.get("cwd") or e["session_id"])
             f.unlink(missing_ok=True)
-            continue
+        else:
+            todo.append((e, f))
+
+    if todo:
+        print(f"\u21bb {len(todo)} interrupted session(s) found")
+    done = 0
+    for e, f in todo:
+        cwd = e["cwd"]
         argv = terminal_argv(term, cwd, shell_command(e, extra))
         if dry_run:
-            print(shlex.join(argv))
+            print(f"  \u2192 {describe(e, extra)}\n      {shlex.join(argv)}")
             done += 1
             continue
         try:
             subprocess.Popen(argv, cwd=cwd, start_new_session=True,
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except OSError as err:
+            print(f"  \u2717 {describe(e, extra)}  ({err})")
             skipped.append(f"{cwd} ({err})")
             continue
+        print(f"  \u2713 {describe(e, extra)}")
         # The resumed session registers itself again on start.
         f.unlink(missing_ok=True)
         done += 1
@@ -255,4 +272,4 @@ if __name__ == "__main__":
         sys.exit(relaunch(dry_run="--dry-run" in sys.argv))
     else:
         print(__doc__)
-        sys.exit(2)
+        sys.exit(0 if cmd in ("-h", "--help", "help") else 2)

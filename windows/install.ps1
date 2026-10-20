@@ -32,7 +32,21 @@ foreach ($event in 'SessionStart', 'SessionEnd') {
 $json = $cfg | ConvertTo-Json -Depth 32
 [IO.File]::WriteAllText($Settings, $json, (New-Object Text.UTF8Encoding $false))
 
-# 2. Shortcuts: desktop + Start menu (+ Startup folder with -Autostart).
+# 2. `reclaude` terminal command (cmd, PowerShell and Windows Terminal).
+$Bin = Join-Path $Dest 'bin'
+New-Item -ItemType Directory -Force -Path $Bin | Out-Null
+$cmdBody = "@echo off`r`n" +
+    "if /i `"%~1`"==`"list`" (powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Script`" -List & exit /b)`r`n" +
+    "if /i `"%~1`"==`"--dry-run`" (powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Script`" -DryRun & exit /b)`r`n" +
+    "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$Script`" -Console`r`n"
+[IO.File]::WriteAllText((Join-Path $Bin 'reclaude.cmd'), $cmdBody)
+$userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+if (($userPath -split ';') -notcontains $Bin) {
+    $newPath = if ($userPath) { "$($userPath.TrimEnd(';'));$Bin" } else { $Bin }
+    [Environment]::SetEnvironmentVariable('Path', $newPath, 'User')
+}
+
+# 3. Shortcuts: desktop + Start menu (+ Startup folder with -Autostart).
 $shell = New-Object -ComObject WScript.Shell
 $targets = @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))
 if ($Autostart) { $targets += [Environment]::GetFolderPath('Startup') }
@@ -48,4 +62,5 @@ foreach ($dir in $targets) {
 
 Write-Host 'Relaunch Claude installed.'
 Write-Host '  - Sessions started from now on are tracked (already open ones: restart them once).'
-Write-Host '  - After a reboot, double-click the "Relaunch Claude" icon.'
+Write-Host '  - After a reboot, double-click the "Relaunch Claude" icon, or run: reclaude'
+Write-Host '  - Open a new terminal first so it picks up the updated PATH.'
