@@ -68,6 +68,37 @@ def carried_flags(argv):
     return out
 
 
+def running_binary(pid):
+    """Path of the claude binary actually running this session.
+
+    `which claude` alone is not enough: tabs opened by reclaude run `bash -lc`,
+    whose PATH (from ~/.profile) can put an older install first, and that old
+    path would then be recorded and relaunched forever."""
+    found = shutil.which("claude")
+    try:
+        exe = os.path.realpath(f"/proc/{pid}/exe") if pid else None
+    except OSError:
+        exe = None
+    if exe and "claude" in Path(exe).name:
+        if found and os.path.realpath(found) == exe:
+            return found  # keep the stable symlink, it survives updates
+        return exe
+    return found
+
+
+def has_conversation(transcript):
+    """True once the transcript holds at least one real exchange. A session
+    opened then closed without typing anything is not worth reopening."""
+    try:
+        with open(transcript, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if '"type":"assistant"' in line or '"type": "assistant"' in line:
+                    return True
+    except OSError:
+        pass
+    return False
+
+
 def hook():
     try:
         data = json.loads(sys.stdin.read() or "{}")
@@ -94,7 +125,7 @@ def hook():
                 "args": carried_flags(argv),
                 # The icon runs with a bare desktop PATH (no nvm, no ~/.local/bin):
                 # remember where claude lives while we still have the session's PATH.
-                "claude_bin": shutil.which("claude"),
+                "claude_bin": running_binary(pid),
                 "updated_at": time.time(),
             }, indent=2))
             tmp.replace(entry)
@@ -137,7 +168,8 @@ def still_running(e):
 
 
 def find_claude(recorded=None):
-    for c in (recorded, shutil.which("claude"), Path.home() / ".local/bin/claude",
+    nvm = sorted(Path.home().glob(".nvm/versions/node/*/bin/claude"), reverse=True)
+    for c in (recorded, shutil.which("claude"), *nvm, Path.home() / ".local/bin/claude",
               CLAUDE_DIR / "local/claude"):
         if c and Path(c).exists():
             return str(c)
@@ -218,6 +250,8 @@ def relaunch(dry_run=False):
             f.unlink(missing_ok=True)
         elif still_running(e):
             continue
+        elif not has_conversation(e.get("transcript_path") or ""):
+            f.unlink(missing_ok=True)  # empty session: nothing to resume
         elif not e.get("cwd") or not Path(e["cwd"]).is_dir():
             skipped.append(e.get("cwd") or e["session_id"])
             f.unlink(missing_ok=True)
