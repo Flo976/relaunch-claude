@@ -47,6 +47,23 @@ function Get-CarriedFlags([string]$cmdLine) {
     return $out
 }
 
+# The binary actually running the session. `Get-Command claude` alone can pick an
+# older install that comes first in PATH, which would then be relaunched forever.
+function Get-RunningBinary($proc) {
+    $found = (Get-Command claude -ErrorAction SilentlyContinue).Source
+    if ($proc -and $proc.ExecutablePath -and $proc.Name -match '^claude') {
+        if ($found -and ((Resolve-Path $found).Path -eq $proc.ExecutablePath)) { return $found }
+        return $proc.ExecutablePath
+    }
+    return $found
+}
+
+# True once the transcript holds a real exchange; an untouched session is not worth reopening.
+function Test-HasConversation([string]$transcript) {
+    if (-not $transcript -or -not (Test-Path $transcript)) { return $false }
+    return [bool](Select-String -Path $transcript -Pattern '"type":\s?"assistant"' -Quiet)
+}
+
 function Invoke-Hook {
     try {
         $data = [Console]::In.ReadToEnd() | ConvertFrom-Json
@@ -66,7 +83,7 @@ function Invoke-Hook {
                 transcript_path = $data.transcript_path
                 pid             = if ($proc) { $proc.ProcessId } else { $null }
                 args            = @(Get-CarriedFlags $(if ($proc) { $proc.CommandLine }))
-                claude_bin      = (Get-Command claude -ErrorAction SilentlyContinue).Source
+                claude_bin      = Get-RunningBinary $proc
                 updated_at      = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
             } | ConvertTo-Json | Set-Content -Path $entry -Encoding UTF8
         }
@@ -118,6 +135,7 @@ function Invoke-Relaunch {
     foreach ($e in Get-Entries) {
         if ($now - [int64]$e.updated_at -gt $StaleDays * 86400) { Remove-Item $e._file; continue }
         if (Test-StillRunning $e) { continue }
+        if (-not (Test-HasConversation $e.transcript_path)) { Remove-Item $e._file; continue }  # empty session
         if (-not $e.cwd -or -not (Test-Path $e.cwd -PathType Container)) {
             $skipped += $(if ($e.cwd) { $e.cwd } else { $e.session_id }); Remove-Item $e._file; continue
         }
