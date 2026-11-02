@@ -114,8 +114,8 @@ Your existing hooks are kept. Running the installer again doesn't create duplica
 ```mermaid
 flowchart LR
     A(["claude starts"]) -- "SessionStart hook" --> R[("registry<br/>~/.claude/relaunch-claude")]
-    B(["/exit · /clear · Ctrl+C"]) -- "SessionEnd hook" --> X{{"entry removed"}}
-    C(["💥 reboot · crash<br/>terminal closed"]) -. "entry kept" .-> R
+    B(["/exit · /clear · Ctrl+C<br/>tab closed"]) -- "SessionEnd hook" --> X{{"entry removed"}}
+    C(["💥 reboot · crash"]) -. "entry kept" .-> R
     R --> D[["reclaude · 🖱️ icon"]]
     D --> T1["tab: claude --resume id₁"]
     D --> T2["tab: claude --resume id₂"]
@@ -123,8 +123,8 @@ flowchart LR
 ```
 
 1. A [Claude Code hook](https://docs.claude.com/en/docs/claude-code/hooks) records every session that starts: id, folder, transcript, flags and the path to `claude`.
-2. Leaving on purpose (`/exit`, `/clear`, `Ctrl+C` twice) removes the session from the registry.
-3. An interrupted session (reboot, crash, terminal closed) stays in the registry.
+2. Leaving on purpose (`/exit`, `/clear`, `Ctrl+C` twice, or closing the tab or window) removes the session from the registry. Sessions where nothing was ever answered are dropped too.
+3. An interrupted session (reboot, crash) stays in the registry. Closing a tab and shutting down look the same to Claude Code, so the hook stores the time the session ended and `reclaude` only reopens the ones that ended within two minutes of a shutdown (or never reported an end at all).
 4. `reclaude` reopens every recorded session whose process isn't running any more, then hands the registry over to the resumed sessions, which register themselves again.
 
 ## 🕹️ Usage

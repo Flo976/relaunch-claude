@@ -21,6 +21,9 @@ CLAUDE_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude"
 REGISTRY = CLAUDE_DIR / "relaunch-claude" / "sessions"
 CONFIG = CLAUDE_DIR / "relaunch-claude" / "config.json"
 STALE_DAYS = 30
+# A session that ended this close to a shutdown was interrupted by it. Closing a
+# tab and shutting down report the same SessionEnd reason, so timing is all we have.
+SHUTDOWN_GRACE = 120
 
 # Flags worth carrying over to the resumed session. Everything else (prompt,
 # --resume, --continue, --session-id…) is deliberately dropped.
@@ -108,10 +111,17 @@ def hook():
         entry = REGISTRY / f"{sid}.json"
         event = data.get("hook_event_name")
         if event == "SessionEnd":
-            # "other" is what an interrupted session reports (terminal closed,
-            # machine going down). Any explicit exit removes it for good.
+            # "other" is what both a closed tab and a shutdown report: keep the
+            # entry with its end time, relaunch() tells them apart. Any explicit
+            # exit removes it for good.
             if data.get("reason") != "other":
                 entry.unlink(missing_ok=True)
+            elif entry.exists():
+                e = json.loads(entry.read_text())
+                e["ended_at"] = time.time()
+                tmp = entry.with_suffix(".tmp")
+                tmp.write_text(json.dumps(e, indent=2))
+                tmp.replace(entry)
             return
         if event == "SessionStart":
             pid, argv = claude_ancestor()
@@ -155,6 +165,29 @@ def boot_time():
     except OSError:
         pass
     return 0
+
+
+def boots():
+    """[(first, last)] timestamps of each boot, from the journal. Empty if unavailable."""
+    try:
+        out = subprocess.run(["journalctl", "--list-boots", "-o", "json"], capture_output=True,
+                             text=True, timeout=10).stdout
+        return [(b["first_entry"] / 1e6, b["last_entry"] / 1e6) for b in json.loads(out)]
+    except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        return []
+
+
+def interrupted_by_shutdown(e, boot_list):
+    """Did this session end because the machine went down (and not a closed tab)?"""
+    ended = e.get("ended_at")
+    if not ended:
+        return True  # no SessionEnd at all: crash, power loss, killed
+    if ended >= boot_time():
+        return False  # ended during this boot: someone closed it
+    for first, last in boot_list:
+        if first <= ended <= last + SHUTDOWN_GRACE:
+            return ended >= last - SHUTDOWN_GRACE
+    return not boot_list  # no journal: can't tell, keep the old behaviour
 
 
 def still_running(e):
@@ -244,12 +277,15 @@ def relaunch(dry_run=False):
         return 1
 
     todo, skipped = [], []
+    boot_list = boots()
     for e in load_entries():
         f = e.pop("_file")
         if time.time() - e.get("updated_at", 0) > STALE_DAYS * 86400:
             f.unlink(missing_ok=True)
         elif still_running(e):
             continue
+        elif not interrupted_by_shutdown(e, boot_list):
+            f.unlink(missing_ok=True)  # closed by hand: not to be reopened
         elif not has_conversation(e.get("transcript_path") or ""):
             f.unlink(missing_ok=True)  # empty session: nothing to resume
         elif not e.get("cwd") or not Path(e["cwd"]).is_dir():
@@ -291,8 +327,10 @@ def relaunch(dry_run=False):
 
 
 def list_entries():
+    boot_list = boots()
     for e in load_entries():
-        state = "running" if still_running(e) else "interrupted"
+        state = ("running" if still_running(e) else
+                 "interrupted" if interrupted_by_shutdown(e, boot_list) else "closed")
         print(f"{state:12} {e['session_id']}  {e.get('cwd')}")
 
 

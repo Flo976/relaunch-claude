@@ -13,6 +13,9 @@ $ClaudeDir = if ($env:CLAUDE_CONFIG_DIR) { $env:CLAUDE_CONFIG_DIR } else { Join-
 $Registry  = Join-Path $ClaudeDir "relaunch-claude\sessions"
 $Config    = Join-Path $ClaudeDir "relaunch-claude\config.json"
 $StaleDays = 30
+# A session that ended this close to a shutdown was interrupted by it. Closing a tab
+# and shutting down report the same SessionEnd reason, so timing is all we have.
+$ShutdownGrace = 120
 
 # Flags carried over to the resumed session; prompt, --resume, --continue… are dropped.
 $KeepBool  = @('--dangerously-skip-permissions', '--allow-dangerously-skip-permissions', '--verbose', '--chrome', '--ide')
@@ -70,8 +73,14 @@ function Invoke-Hook {
         if (-not $data.session_id) { return }
         $entry = Join-Path $Registry "$($data.session_id).json"
         if ($data.hook_event_name -eq 'SessionEnd') {
-            # "other" = interrupted (terminal closed, shutdown). Explicit exits are forgotten.
+            # "other" = closed tab or shutdown: keep the entry with its end time,
+            # the relaunch side tells them apart. Explicit exits are forgotten.
             if ($data.reason -ne 'other') { Remove-Item $entry -ErrorAction SilentlyContinue }
+            elseif (Test-Path $entry) {
+                $e = Get-Content $entry -Raw | ConvertFrom-Json
+                $e | Add-Member -Force -NotePropertyName ended_at -NotePropertyValue ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+                $e | ConvertTo-Json | Set-Content -Path $entry -Encoding UTF8
+            }
             return
         }
         if ($data.hook_event_name -eq 'SessionStart') {
@@ -103,6 +112,24 @@ function Get-Entries {
     }
 }
 
+# Unix times of past shutdowns (1074 = shutdown requested, 6006 = event log stopped).
+function Get-ShutdownTimes {
+    try {
+        Get-WinEvent -FilterHashtable @{ LogName = 'System'; Id = 1074, 6006 } -MaxEvents 200 -ErrorAction Stop |
+            ForEach-Object { ([DateTimeOffset]$_.TimeCreated).ToUnixTimeSeconds() }
+    } catch { @() }
+}
+
+# Did this session end because the machine went down (and not a closed tab)?
+function Test-InterruptedByShutdown($e, $shutdowns) {
+    if (-not $e.ended_at) { return $true }  # no SessionEnd at all: crash, power loss, killed
+    $boot = ([DateTimeOffset](Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToUnixTimeSeconds()
+    $ended = [int64]$e.ended_at
+    if ($ended -ge $boot) { return $false }  # ended during this boot: someone closed it
+    if (-not $shutdowns) { return $true }   # no event log: can't tell, keep the old behaviour
+    return [bool]($shutdowns | Where-Object { $_ -ge $ended - $ShutdownGrace -and $_ -le $ended + $ShutdownGrace })
+}
+
 function Test-StillRunning($e) {
     if (-not $e.pid) { return $false }
     $p = Get-Process -Id $e.pid -ErrorAction SilentlyContinue
@@ -131,10 +158,12 @@ function Invoke-Relaunch {
     $shell = if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
     $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
     $done = 0; $skipped = @(); $todo = @()
+    $shutdowns = @(Get-ShutdownTimes)
 
     foreach ($e in Get-Entries) {
         if ($now - [int64]$e.updated_at -gt $StaleDays * 86400) { Remove-Item $e._file; continue }
         if (Test-StillRunning $e) { continue }
+        if (-not (Test-InterruptedByShutdown $e $shutdowns)) { Remove-Item $e._file; continue }  # closed by hand
         if (-not (Test-HasConversation $e.transcript_path)) { Remove-Item $e._file; continue }  # empty session
         if (-not $e.cwd -or -not (Test-Path $e.cwd -PathType Container)) {
             $skipped += $(if ($e.cwd) { $e.cwd } else { $e.session_id }); Remove-Item $e._file; continue
@@ -186,8 +215,10 @@ function Invoke-Relaunch {
 
 if ($Hook) { Invoke-Hook }
 elseif ($List) {
+    $shutdowns = @(Get-ShutdownTimes)
     foreach ($e in Get-Entries) {
-        $state = if (Test-StillRunning $e) { 'running' } else { 'interrupted' }
+        $state = if (Test-StillRunning $e) { 'running' }
+                 elseif (Test-InterruptedByShutdown $e $shutdowns) { 'interrupted' } else { 'closed' }
         '{0,-12} {1}  {2}' -f $state, $e.session_id, $e.cwd
     }
 }
